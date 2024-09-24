@@ -109,6 +109,7 @@ singleton3 *singleton3::m_instance = nullptr;
 std::mutex singleton3::m_mutex;
 
 //双检查线程安全版本
+//似乎存在数据竞争问题
 class singleton4
 {
 public:
@@ -124,7 +125,7 @@ public:
             {
                 tmp = new singleton4();
                 std::atomic_thread_fence(std::memory_order_release);
-                m_instance_atomic.store(tmp, std::memory_order_release);
+                m_instance_atomic.store(tmp, std::memory_order_relaxed);
                 atexit(Desturctor);
             }
         }
@@ -210,17 +211,52 @@ private:
     }
 };
 
+class singleton_onceflag {
+public:
+    singleton_onceflag(const singleton_onceflag&) = delete;
+    singleton_onceflag& operator=(const singleton_onceflag&) = delete;
+    static singleton_onceflag* GetInstance() {
+        std::cerr << "singleton_onceflag::GetInstance()\n";
+        std::call_once(initflag, Init);
+        return m_instance;
+    }
+    
+private:
+    static void Init() {
+        std::cerr << "Initializing singleton_onceflag instance\n";
+        m_instance = new singleton_onceflag();
+        atexit(Desturctor);
+    }
+
+    static void Desturctor() {
+        if (m_instance != nullptr) {
+            std::cerr << "Destroying singleton_onceflag instance\n";
+            delete m_instance;
+            m_instance = nullptr;
+        }
+    }
+    singleton_onceflag() {}
+    ~singleton_onceflag() {
+        std::cout << "~singleton_onceflag()\n";
+    }
+    static std::once_flag initflag;
+    static singleton_onceflag* m_instance;
+};
+singleton_onceflag* singleton_onceflag::m_instance = nullptr;
+std::once_flag singleton_onceflag::initflag;
+
 int main() {
-    // 堆上资源不能正确析构
-    singleton1 *s1 = singleton1::GetInstance();
-    // 栈上资源可以正确析构
-    singleton2 *s2 = singleton2::GetInstance();
-    // 线程安全
-    singleton3 *s3 = singleton3::GetInstance();
-    // 双检查线程安全
-    singleton4 *s4 = singleton4::GetInstance();
-    // C++11 静态局部变量线程安全
-    singleton5 *s5 = singleton5::GetInstance();
-    designPattern *s6 = designPattern::GetInstance();
+    // // 堆上资源不能正确析构
+    // singleton1 *s1 = singleton1::GetInstance();
+    // // 栈上资源可以正确析构
+    // singleton2 *s2 = singleton2::GetInstance();
+    // // 由于内存序等问题，在多核心多处理器等情况下可能有问题
+    // singleton3 *s3 = singleton3::GetInstance();
+    // // 双检查线程安全（加入内存屏障）
+    // singleton4 *s4 = singleton4::GetInstance();
+    // // C++11 静态局部变量线程安全
+    // singleton5 *s5 = singleton5::GetInstance();
+    // designPattern *s6 = designPattern::GetInstance();
+    singleton_onceflag *s7 = singleton_onceflag::GetInstance();
     return 0;
 }
